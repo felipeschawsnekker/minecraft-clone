@@ -3,14 +3,32 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Minecraft Clone - Step 1</title>
+    <title>Minecraft Clone</title>
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
     <div id="hud">
-      <div id="title">Minecraft Clone</div>
-      <div id="subtitle">Step 1: WASD movement</div>
+      <div id="health">Health: 20</div>
+      <div id="hunger">Hunger: 20</div>
     </div>
+
+    <div id="start-overlay" class="overlay visible">
+      <div class="panel">
+        <h1>Minecraft Clone</h1>
+        <p>W/A/S/D move, mouse look, Space jump, left click mine, right click place.</p>
+        <button id="start-button">Start game</button>
+      </div>
+    </div>
+
+    <div id="pause-overlay" class="overlay hidden">
+      <div class="panel small">
+        <h2>Paused</h2>
+        <button id="resume-button">Resume</button>
+      </div>
+    </div>
+
+    <div id="hotbar"></div>
+    <div id="crosshair"></div>
 
     <script type="module" src="main.js"></script>
   </body>
