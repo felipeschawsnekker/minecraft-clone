@@ -10,12 +10,22 @@
     <div id="hud">
       <div id="health">Health: 20</div>
       <div id="hunger">Hunger: 20</div>
+      <div id="info">Survival Mode</div>
     </div>
 
     <div id="start-overlay" class="overlay visible">
       <div class="panel">
         <h1>Minecraft Clone</h1>
-        <p>W/A/S/D move, mouse look, Space jump, left click mine, right click place.</p>
+        <p>Explore, gather resources, craft, and survive.</p>
+        <ul>
+          <li>WASD = move</li>
+          <li>Mouse = look</li>
+          <li>Space = jump</li>
+          <li>Left click = mine</li>
+          <li>Right click = place</li>
+          <li>C = crafting</li>
+          <li>Esc = pause</li>
+        </ul>
         <button id="start-button">Start game</button>
       </div>
     </div>
@@ -24,6 +34,20 @@
       <div class="panel small">
         <h2>Paused</h2>
         <button id="resume-button">Resume</button>
+      </div>
+    </div>
+
+    <div id="crafting-panel" class="hidden">
+      <div class="panel crafting-window">
+        <h2>Crafting</h2>
+        <div class="recipe-row">
+          <button data-recipe="planks">Craft Planks</button>
+          <span>Wood -> 4 Planks</span>
+        </div>
+        <div class="recipe-row">
+          <button data-recipe="crafting_table">Craft Table</button>
+          <span>4 Planks -> 1 Crafting Table</span>
+        </div>
       </div>
     </div>
 
