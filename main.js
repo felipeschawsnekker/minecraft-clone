@@ -2,7 +2,7 @@ import * as THREE from 'https://unpkg.com/three@0.160.1/build/three.module.js';
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x87ceeb);
-scene.fog = new THREE.Fog(0x87ceeb, 15, 80);
+scene.fog = new THREE.Fog(0x87ceeb, 18, 90);
 
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 200);
 camera.rotation.order = 'YXZ';
@@ -16,23 +16,55 @@ document.body.appendChild(renderer.domElement);
 const world = new THREE.Group();
 scene.add(world);
 
-const ambient = new THREE.AmbientLight(0xffffff, 0.75);
+const ambient = new THREE.AmbientLight(0xffffff, 0.8);
 scene.add(ambient);
 
-const sun = new THREE.DirectionalLight(0xffffff, 1.0);
-sun.position.set(10, 20, 10);
+const sun = new THREE.DirectionalLight(0xffffff, 1.1);
+sun.position.set(12, 18, 10);
 scene.add(sun);
-
-const ground = new THREE.Mesh(
-  new THREE.BoxGeometry(100, 1, 100),
-  new THREE.MeshStandardMaterial({ color: 0x4caf50 })
-);
-ground.position.y = -0.5;
-world.add(ground);
 
 const blockMaterial = new THREE.MeshStandardMaterial({ color: 0x8d6e63 });
 const blockMap = new Map();
 const blockKey = (x, y, z) => `${Math.round(x)},${Math.round(y)},${Math.round(z)}`;
+
+const inventory = [
+  { id: 'grass', name: 'Grass', color: 0x6bbf59 },
+  { id: 'dirt', name: 'Dirt', color: 0x8d6e63 },
+  { id: 'stone', name: 'Stone', color: 0x7a7f87 },
+  { id: 'wood', name: 'Wood', color: 0x9c6b53 },
+];
+
+let selectedSlot = 0;
+let hitBlockInfo = null;
+let miningProgress = 0;
+let miningTarget = null;
+let savedWorldData = null;
+
+function buildHotbar() {
+  const hotbar = document.createElement('div');
+  hotbar.id = 'hotbar';
+
+  inventory.forEach((item, index) => {
+    const slot = document.createElement('div');
+    slot.className = 'hotbar-slot';
+    slot.dataset.index = String(index);
+    slot.textContent = item.name;
+
+    if (index === selectedSlot) {
+      slot.classList.add('selected');
+    }
+
+    hotbar.appendChild(slot);
+  });
+
+  document.body.appendChild(hotbar);
+}
+
+function updateHotbar() {
+  document.querySelectorAll('.hotbar-slot').forEach((slot, index) => {
+    slot.classList.toggle('selected', index === selectedSlot);
+  });
+}
 
 function addBlock(x, y, z, color = 0x8d6e63) {
   const key = blockKey(x, y, z);
@@ -57,35 +89,91 @@ function removeBlock(x, y, z) {
   blockMap.delete(key);
 }
 
-function setInitialBlocks() {
-  for (let x = -3; x <= 3; x += 1) {
-    for (let z = -2; z <= 2; z += 1) {
-      const height = (Math.abs(x) + Math.abs(z)) % 3 === 0 ? 1 : 0;
-      if (height > 0) addBlock(x, 0, z, 0x7cb342);
-    }
-  }
-
-  addBlock(0, 1, 0, 0x8d6e63);
-  addBlock(1, 1, 0, 0x9c6b53);
-  addBlock(-1, 1, 0, 0x9c6b53);
-  addBlock(0, 2, 0, 0x8d6e63);
-  addBlock(0, 1, 1, 0x8d6e63);
-  addBlock(2, 0, -1, 0x8d6e63);
-  addBlock(3, 0, -1, 0x7b5e57);
-  addBlock(4, 0, -1, 0x7b5e57);
+function terrainHeight(x, z) {
+  const rough = Math.sin(x * 0.7) + Math.cos(z * 0.9) + Math.sin((x + z) * 0.4);
+  const base = Math.floor(3 + rough * 1.5);
+  return Math.max(1, base);
 }
 
-setInitialBlocks();
+function generateTerrain() {
+  for (let x = -24; x <= 24; x += 1) {
+    for (let z = -24; z <= 24; z += 1) {
+      const height = terrainHeight(x, z);
+      for (let y = 0; y <= height; y += 1) {
+        let color = 0x8d6e63;
+        if (y === height) color = 0x6bbf59;
+        else if (y < height - 1) color = 0x7a7f87;
+        addBlock(x, y, z, color);
+      }
+    }
+  }
+}
+
+function saveWorld() {
+  const blocks = [];
+  for (const [key, mesh] of blockMap.entries()) {
+    const p = mesh.position;
+    blocks.push({ x: p.x, y: p.y, z: p.z, color: mesh.material.color.getHex() });
+  }
+
+  localStorage.setItem('minecraft-world', JSON.stringify(blocks));
+}
+
+function loadWorld() {
+  const raw = localStorage.getItem('minecraft-world');
+  if (!raw) return false;
+
+  try {
+    const blocks = JSON.parse(raw);
+    if (!Array.isArray(blocks) || blocks.length === 0) return false;
+
+    blockMap.forEach((mesh) => world.remove(mesh));
+    blockMap.clear();
+
+    blocks.forEach((b) => addBlock(b.x, b.y, b.z, b.color));
+    return true;
+  } catch (err) {
+    console.warn('Failed to load world:', err);
+    return false;
+  }
+}
+
+function ensureWorld() {
+  if (!loadWorld()) {
+    generateTerrain();
+    saveWorld();
+  }
+}
+
+const ground = new THREE.Mesh(
+  new THREE.BoxGeometry(100, 1, 100),
+  new THREE.MeshStandardMaterial({ color: 0x4caf50 })
+);
+ground.position.y = -0.5;
+world.add(ground);
+
+function getPlayerBounds(position) {
+  return {
+    minX: position.x - 0.35,
+    maxX: position.x + 0.35,
+    minY: position.y,
+    maxY: position.y + 1.8,
+    minZ: position.z - 0.35,
+    maxZ: position.z + 0.35,
+  };
+}
 
 const player = {
-  position: new THREE.Vector3(0, 1.7, 10),
+  position: new THREE.Vector3(0, 10, 8),
   velocity: new THREE.Vector3(),
   radius: 0.35,
-  height: 1.7,
-  speed: 6,
+  height: 1.8,
+  speed: 6.5,
   jumpStrength: 7.5,
   gravity: 18,
   onGround: false,
+  yaw: 0,
+  pitch: 0,
 };
 
 const keys = {};
@@ -93,9 +181,22 @@ const keys = {};
 window.addEventListener('keydown', (event) => {
   const key = event.key.toLowerCase();
   keys[key] = true;
-  if (event.code === 'Space') {
-    event.preventDefault();
+
+  if (key === 'e') {
+    saveWorld();
   }
+
+  if (key === 'r') {
+    const worldData = JSON.parse(localStorage.getItem('minecraft-world') || '[]');
+    if (worldData.length > 0) loadWorld();
+  }
+
+  if (['1', '2', '3', '4'].includes(key)) {
+    selectedSlot = Number(key) - 1;
+    updateHotbar();
+  }
+
+  if (event.code === 'Space') event.preventDefault();
 });
 
 window.addEventListener('keyup', (event) => {
@@ -115,54 +216,24 @@ renderer.domElement.addEventListener('click', () => {
 document.addEventListener('mousemove', (event) => {
   if (document.pointerLockElement !== renderer.domElement) return;
 
-  player.yaw = (player.yaw ?? 0) - event.movementX * 0.002;
-  player.pitch = ((player.pitch ?? 0) - event.movementY * 0.002);
+  player.yaw -= event.movementX * 0.002;
+  player.pitch -= event.movementY * 0.002;
   player.pitch = THREE.MathUtils.clamp(player.pitch, -Math.PI / 2 + 0.1, Math.PI / 2 - 0.1);
 });
 
-window.addEventListener('mousedown', (event) => {
-  if (document.pointerLockElement !== renderer.domElement) return;
-
-  if (event.button === 0) {
-    mineBlock();
-  }
-  if (event.button === 2) {
-    placeBlock();
-  }
-});
-
-function getPlayerYaw() {
-  return player.yaw ?? 0;
-}
-
-function getPlayerPitch() {
-  return player.pitch ?? 0;
-}
-
-function playerBounds(position) {
-  const minX = position.x - player.radius;
-  const maxX = position.x + player.radius;
-  const minY = position.y;
-  const maxY = position.y + player.height;
-  const minZ = position.z - player.radius;
-  const maxZ = position.z + player.radius;
-
-  return { minX, maxX, minY, maxY, minZ, maxZ };
-}
-
 function collidesWithWorld(pos) {
-  const bounds = playerBounds(pos);
+  const bounds = getPlayerBounds(pos);
 
-  for (const [key, mesh] of blockMap.entries()) {
-    const blockPos = mesh.position;
-    const minX = blockPos.x - 0.5;
-    const maxX = blockPos.x + 0.5;
-    const minY = blockPos.y - 0.5;
-    const maxY = blockPos.y + 0.5;
-    const minZ = blockPos.z - 0.5;
-    const maxZ = blockPos.z + 0.5;
+  for (const mesh of blockMap.values()) {
+    const p = mesh.position;
+    const minX = p.x - 0.5;
+    const maxX = p.x + 0.5;
+    const minY = p.y - 0.5;
+    const maxY = p.y + 0.5;
+    const minZ = p.z - 0.5;
+    const maxZ = p.z + 0.5;
 
-    const overlaps =
+    const overlap =
       bounds.minX < maxX &&
       bounds.maxX > minX &&
       bounds.minY < maxY &&
@@ -170,40 +241,37 @@ function collidesWithWorld(pos) {
       bounds.minZ < maxZ &&
       bounds.maxZ > minZ;
 
-    if (overlaps) return true;
+    if (overlap) return true;
   }
 
   return false;
 }
 
 function movePlayer(delta) {
-  const yaw = getPlayerYaw();
-  const forward = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));
-  const right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
+  const forward = new THREE.Vector3(Math.sin(player.yaw), 0, Math.cos(player.yaw));
+  const right = new THREE.Vector3(Math.cos(player.yaw), 0, -Math.sin(player.yaw));
 
-  const movement = new THREE.Vector3();
-  if (keys['w']) movement.add(forward);
-  if (keys['s']) movement.sub(forward);
-  if (keys['a']) movement.sub(right);
-  if (keys['d']) movement.add(right);
+  const move = new THREE.Vector3();
+  if (keys['w']) move.add(forward);
+  if (keys['s']) move.sub(forward);
+  if (keys['a']) move.sub(right);
+  if (keys['d']) move.add(right);
 
-  if (movement.lengthSq() > 0) {
-    movement.normalize().multiplyScalar(player.speed * delta);
+  if (move.lengthSq() > 0) {
+    move.normalize().multiplyScalar(player.speed * delta);
 
     const nextX = player.position.clone();
-    nextX.x += movement.x;
+    nextX.x += move.x;
     if (!collidesWithWorld(nextX)) player.position.x = nextX.x;
 
     const nextZ = player.position.clone();
-    nextZ.z += movement.z;
+    nextZ.z += move.z;
     if (!collidesWithWorld(nextZ)) player.position.z = nextZ.z;
   }
 
-  if (keys[' ']) {
-    if (player.onGround) {
-      player.velocity.y = player.jumpStrength;
-      player.onGround = false;
-    }
+  if (keys[' '] && player.onGround) {
+    player.velocity.y = player.jumpStrength;
+    player.onGround = false;
   }
 
   player.velocity.y -= player.gravity * delta;
@@ -217,86 +285,159 @@ function movePlayer(delta) {
     if (player.velocity.y < 0) {
       player.onGround = true;
       player.velocity.y = 0;
-      player.position.y = Math.ceil(player.position.y);
+      player.position.y = Math.floor(player.position.y) + 1.8;
     } else {
       player.velocity.y = 0;
     }
   }
 
-  if (player.position.y < 1.7) {
-    player.position.y = 1.7;
+  if (player.position.y < 2) {
+    player.position.y = 2;
     player.velocity.y = 0;
     player.onGround = true;
   }
 
-  camera.position.set(player.position.x, player.position.y + 1.2, player.position.z);
-  camera.rotation.y = yaw;
-  camera.rotation.x = getPlayerPitch();
+  camera.position.set(player.position.x, player.position.y + 0.8, player.position.z);
+  camera.rotation.y = player.yaw;
+  camera.rotation.x = player.pitch;
 }
 
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2(0, 0);
 
-function mineBlock() {
+function getTargetBlock() {
   raycaster.setFromCamera(mouse, camera);
+  const objects = Array.from(blockMap.values());
+  const hits = raycaster.intersectObjects(objects, false);
+  if (hits.length === 0) return null;
+  return hits[0];
+}
 
-  const intersections = raycaster.intersectObjects(Array.from(blockMap.values()), false);
-  if (intersections.length === 0) return;
+function beginMining() {
+  const hit = getTargetBlock();
+  if (!hit) return;
 
-  const hit = intersections[0];
-  const blockPos = hit.object.position;
-  removeBlock(blockPos.x, blockPos.y, blockPos.z);
+  hitBlockInfo = hit;
+  miningTarget = hit.object;
+  miningProgress = 0;
+}
+
+function endMining() {
+  hitBlockInfo = null;
+  miningTarget = null;
+  miningProgress = 0;
+}
+
+function mineBlock() {
+  const hit = getTargetBlock();
+  if (!hit) return;
+
+  const p = hit.object.position;
+  removeBlock(p.x, p.y, p.z);
+  saveWorld();
 }
 
 function placeBlock() {
-  raycaster.setFromCamera(mouse, camera);
+  const hit = getTargetBlock();
+  if (!hit) return;
 
-  const intersections = raycaster.intersectObjects(Array.from(blockMap.values()), false);
-  if (intersections.length === 0) return;
-
-  const hit = intersections[0];
   const normal = hit.face.normal.clone();
   const blockPos = hit.object.position.clone();
   const placementPos = blockPos.add(normal);
 
-  const playerPos = player.position.clone();
+  const playerCenter = new THREE.Vector3(player.position.x, player.position.y + 0.9, player.position.z);
   const playerBox = {
-    minX: playerPos.x - player.radius,
-    maxX: playerPos.x + player.radius,
-    minY: playerPos.y,
-    maxY: playerPos.y + player.height,
-    minZ: playerPos.z - player.radius,
-    maxZ: playerPos.z + player.radius,
+    minX: playerCenter.x - 0.4,
+    maxX: playerCenter.x + 0.4,
+    minY: playerCenter.y - 0.9,
+    maxY: playerCenter.y + 0.9,
+    minZ: playerCenter.z - 0.4,
+    maxZ: playerCenter.z + 0.4,
   };
 
-  const newBlockMinX = placementPos.x - 0.5;
-  const newBlockMaxX = placementPos.x + 0.5;
-  const newBlockMinY = placementPos.y - 0.5;
-  const newBlockMaxY = placementPos.y + 0.5;
-  const newBlockMinZ = placementPos.z - 0.5;
-  const newBlockMaxZ = placementPos.z + 0.5;
+  const blockBox = {
+    minX: placementPos.x - 0.5,
+    maxX: placementPos.x + 0.5,
+    minY: placementPos.y - 0.5,
+    maxY: placementPos.y + 0.5,
+    minZ: placementPos.z - 0.5,
+    maxZ: placementPos.z + 0.5,
+  };
 
-  const overlapsPlayer =
-    playerBox.minX < newBlockMaxX &&
-    playerBox.maxX > newBlockMinX &&
-    playerBox.minY < newBlockMaxY &&
-    playerBox.maxY > newBlockMinY &&
-    playerBox.minZ < newBlockMaxZ &&
-    playerBox.maxZ > newBlockMinZ;
+  const overlaps =
+    playerBox.minX < blockBox.maxX &&
+    playerBox.maxX > blockBox.minX &&
+    playerBox.minY < blockBox.maxY &&
+    playerBox.maxY > blockBox.minY &&
+    playerBox.minZ < blockBox.maxZ &&
+    playerBox.maxZ > blockBox.minZ;
 
-  if (!overlapsPlayer) {
-    addBlock(Math.round(placementPos.x), Math.round(placementPos.y), Math.round(placementPos.z));
+  if (!overlaps) {
+    const item = inventory[selectedSlot];
+    const color = item ? item.color : 0x8d6e63;
+    addBlock(Math.round(placementPos.x), Math.round(placementPos.y), Math.round(placementPos.z), color);
+    saveWorld();
   }
 }
 
-const clock = new THREE.Clock();
+window.addEventListener('mousedown', (event) => {
+  if (document.pointerLockElement !== renderer.domElement) return;
+  if (event.button === 0) beginMining();
+  if (event.button === 2) placeBlock();
+});
+
+window.addEventListener('mouseup', (event) => {
+  if (event.button === 0) {
+    endMining();
+  }
+});
+
+function updateMiningState() {
+  if (!miningTarget || !hitBlockInfo) return;
+
+  miningProgress += 0.04;
+
+  if (miningProgress >= 1) {
+    const p = miningTarget.position;
+    removeBlock(p.x, p.y, p.z);
+    saveWorld();
+    endMining();
+  }
+}
+
+function updateCrosshair() {
+  const crosshair = document.getElementById('crosshair');
+  if (!crosshair) return;
+
+  if (hitBlockInfo) {
+    crosshair.style.opacity = '1';
+    crosshair.style.transform = `scale(${1 + miningProgress * 0.6})`;
+  } else {
+    crosshair.style.opacity = '0.9';
+    crosshair.style.transform = 'scale(1)';
+  }
+}
+
+function createCrosshair() {
+  const crosshair = document.createElement('div');
+  crosshair.id = 'crosshair';
+  document.body.appendChild(crosshair);
+}
 
 function animate() {
   requestAnimationFrame(animate);
 
-  const delta = Math.min(clock.getDelta(), 0.033);
+  const delta = Math.min(0.033, clock.getDelta());
   movePlayer(delta);
+  updateMiningState();
+  updateCrosshair();
   renderer.render(scene, camera);
 }
 
+const clock = new THREE.Clock();
+
+buildHotbar();
+updateHotbar();
+createCrosshair();
+ensureWorld();
 animate();
